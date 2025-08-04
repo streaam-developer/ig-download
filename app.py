@@ -96,4 +96,6 @@ def download_file():
     return send_from_directory(EDITED_DIR, latest_output_file, as_attachment=True)
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(host="0.0.0.0", port=5000, debug=False)
+
+
