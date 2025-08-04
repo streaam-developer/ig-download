@@ -78,7 +78,7 @@ def add_styled_text(input_path, output_path, text, fontfile='/usr/share/fonts/tr
         f"fontcolor=red:"
         f"fontsize=40:"
         f"box=1:boxcolor=black@0.4:boxborderw=10:"
-        f"x=(w-text_w)/2:y=(h-text_h)-80"
+        f"x=(w-text_w)/2:y=(h-text_h)-150"
     )
     ffmpeg.input(input_path).output(
         output_path,
@@ -104,4 +104,5 @@ def download_file():
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
