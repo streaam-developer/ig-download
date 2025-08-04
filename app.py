@@ -38,8 +38,14 @@ def download_reel(reel_url):
             'outtmpl': os.path.join(RAW_DIR, '%(title).80s.%(ext)s'),
             'merge_output_format': 'mp4',
             'noplaylist': True,
-            'quiet': True
+            'quiet': True,
+            'cookiefile': 'cookies.txt',  # <-- Use your cookies file here
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+                              '(KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
+            },
         }
+
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(reel_url, download=True)
             filename = ydl.prepare_filename(info)
@@ -51,7 +57,6 @@ def download_reel(reel_url):
 
             add_styled_text(filename, edited_output, "Check Pin Comment")
 
-            # Schedule auto-deletion
             schedule_file_delete(filename)
             schedule_file_delete(edited_output)
 
@@ -61,8 +66,10 @@ def download_reel(reel_url):
                 "description": info.get('description', 'No Description'),
                 "filename": safe_name
             }
+
     except Exception as e:
         return {"error": str(e)}
+
 
 def add_styled_text(input_path, output_path, text, fontfile='/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'):
     drawtext_filter = (
@@ -97,5 +104,3 @@ def download_file():
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5000, debug=False)
-
-
