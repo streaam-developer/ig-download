@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>🎬 Instagram Reels Downloader & Editor</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- Bootstrap CDN -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <!-- Custom Styling -->
+  <style>
+    body {
+      background: linear-gradient(135deg, #fdfbfb 0%, #ebedee 100%);
+      font-family: 'Segoe UI', sans-serif;
+      color: #333;
+    }
+
+    .container {
+      max-width: 650px;
+      margin-top: 70px;
+    }
+
+    .card {
+      border-radius: 20px;
+      border: none;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+      background: #fff;
+      padding: 30px;
+    }
+
+    h3 {
+      font-weight: bold;
+      color: #444;
+    }
+
+    input.form-control {
+      height: 48px;
+      font-size: 16px;
+      border-radius: 12px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(45deg, #ff416c, #ff4b2b);
+      border: none;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 16px;
+    }
+
+    .btn-primary:hover {
+      background: linear-gradient(45deg, #ff2a5c, #ff3a1b);
+    }
+
+    .btn-success {
+      background: linear-gradient(45deg, #00b09b, #96c93d);
+      border: none;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 16px;
+    }
+
+    .btn-success:hover {
+      background: linear-gradient(45deg, #009c88, #85b535);
+    }
+
+    .alert {
+      border-radius: 12px;
+      font-size: 15px;
+    }
+
+    small {
+      font-size: 12px;
+      color: #888;
+    }
+
+    @media (max-width: 600px) {
+      h3 {
+        font-size: 24px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <div class="card">
+      <h3 class="text-center mb-4">📥 Instagram Reels Downloader</h3>
+
+      <form method="POST">
+        <div class="mb-3">
+          <input type="text" name="url" class="form-control" placeholder="Paste Instagram Reel URL..." required>
+        </div>
+        <div class="d-grid">
+          <button type="submit" class="btn btn-primary">Download & Edit</button>
+        </div>
+      </form>
+
+      {% if info %}
+        <hr class="my-4">
+        {% if info.error %}
+          <div class="alert alert-danger">{{ info.error }}</div>
+        {% else %}
+          <div class="alert alert-success">
+            <h5 class="mb-2">✅ Download Complete</h5>
+            <p><strong>Title:</strong> {{ info.title }}</p>
+            <p><strong>Description:</strong> {{ info.description }}</p>
+            <a href="/download" class="btn btn-success w-100 mt-3">⬇️ Download Edited Video</a>
+            <small class="d-block mt-2">* This file will be deleted automatically in 5 minutes.</small>
+          </div>
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
+
+</body>
+</html>
