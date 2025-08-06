@@ -70,21 +70,26 @@ def convert_to_hls_multires(mp4_path, output_folder, max_height):
         streams.append(("640", "360", "1000k"))
 
     split_video = f"[0:v]split={len(streams)}" + ''.join(f"[v{i}]" for i in range(len(streams))) + ";"
-    scale_filters = [f"[v{i}]scale=w={w}:h={h}[v{i}out]" for i, (w, h, _) in enumerate(streams)]
     audio_split = f"[0:a]asplit={len(streams)}" + ''.join(f"[a{i}]" for i in range(len(streams))) + ";"
+    scale_filters = [f"[v{i}]scale=w={w}:h={h}[v{i}out]" for i, (w, h, _) in enumerate(streams)]
 
     filter_complex = split_video + audio_split + ';'.join(scale_filters)
 
     cmd = [
-        'ffmpeg', '-i', mp4_path,
+        'ffmpeg', '-y', '-i', mp4_path,
         '-filter_complex', filter_complex
     ]
 
     for i, (_, _, bitrate) in enumerate(streams):
         cmd += [
             '-map', f'[v{i}out]', '-map', f'[a{i}]',
-            f'-c:v:{i}', 'libx264', f'-b:v:{i}', bitrate,
-            f'-c:a:{i}', 'aac', '-b:a', '128k'
+            f'-c:v:{i}', 'libx264',
+            f'-preset', 'ultrafast',  # 🚀 FASTEST preset
+            f'-tune', 'fastdecode',
+            f'-b:v:{i}', bitrate,
+            f'-c:a:{i}', 'aac',
+            f'-b:a:{i}', '128k',
+            '-threads', '0'  # Use all CPU cores
         ]
         var_map_parts.append(f'v:{i},a:{i},name:{streams[i][1]}p')
 
@@ -98,6 +103,7 @@ def convert_to_hls_multires(mp4_path, output_folder, max_height):
         f'{output_folder}/%v/playlist.m3u8'
     ]
 
+    print("⏳ Starting fast HLS conversion...")
     subprocess.run(cmd, check=True)
     return os.path.join(output_folder, 'master.m3u8')
 
