@@ -69,16 +69,9 @@ def convert_to_hls_multires(mp4_path, output_folder, max_height):
     if max_height >= 360:
         streams.append(("640", "360", "1000k"))
 
-    filter_split = f"[0:v]split={len(streams)}"
-    for i in range(len(streams)):
-        filter_split += f"[v{i}]"
-    filter_split += ";"
-
-    for i, (w, h, _) in enumerate(streams):
-        filters.append(f"[v{i}]scale=w={w}:h={h}[v{i}out]")
-        var_map.append(f"v:{i},a:0,name:{h}p")
-
-    filter_complex = filter_split + ' '.join(filters)
+    filter_split = f"[0:v]split={len(streams)}" + ''.join(f"[v{i}]" for i in range(len(streams))) + ";"
+    filters = [f"[v{i}]scale=w={w}:h={h}[v{i}out]" for i, (w, h, _) in enumerate(streams)]
+    filter_complex = filter_split + ';'.join(filters)
 
     cmd = [
         'ffmpeg', '-i', mp4_path,
@@ -90,7 +83,7 @@ def convert_to_hls_multires(mp4_path, output_folder, max_height):
 
     cmd += ['-map', '0:a', '-c:a', 'aac', '-b:a', '128k',
             '-f', 'hls',
-            '-var_stream_map', ' '.join(var_map),
+            '-var_stream_map', ' '.join([f'v:{i},a:0,name:{h}p' for i, (_, h, _) in enumerate(streams)]),
             '-master_pl_name', 'master.m3u8',
             '-hls_time', '10',
             '-hls_list_size', '0',
@@ -99,6 +92,7 @@ def convert_to_hls_multires(mp4_path, output_folder, max_height):
 
     subprocess.run(cmd, check=True)
     return os.path.join(output_folder, 'master.m3u8')
+
 
 # Upload to FTP
 
