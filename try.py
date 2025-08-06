@@ -16,10 +16,10 @@ from Crypto.Random import get_random_bytes
 
 load_dotenv()
 
-WP_SITE = os.getenv("WP_SITE").rstrip('/')
-WP_USER = os.getenv("WP_USER")
-WP_PASS = os.getenv("WP_PASS")
-SECRET_KEY = os.getenv("SECRET_KEY")
+WP_SITE = os.getenv("WP_SITE", "https://skymovieshd.boutique/").rstrip('/')
+WP_USER = os.getenv("WP_USER", "upload")
+WP_PASS = os.getenv("WP_PASS", "GZ8U 9Dxd BGKm XmHW dMlF SExb")
+SECRET_KEY = os.getenv("SECRET_KEY", "my_secret_key_12345")
 
 UPLOAD_DIR = "tmp_videos"
 HLS_UPLOAD_DIR = "/path/to/your/wp-content/uploads/secure-hls"
