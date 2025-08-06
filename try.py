@@ -1,4 +1,4 @@
-# Filename: auto_hls_uploader.py
+# Filename: auto_hls_uploader.py (with FTP upload)
 
 import os
 import base64
@@ -13,6 +13,7 @@ from urllib.parse import quote
 from hashlib import sha256
 from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
+from ftplib import FTP
 
 load_dotenv()
 
@@ -21,10 +22,13 @@ WP_USER = os.getenv("WP_USER", "upload")
 WP_PASS = os.getenv("WP_PASS", "GZ8U 9Dxd BGKm XmHW dMlF SExb")
 SECRET_KEY = os.getenv("SECRET_KEY", "my_secret_key_12345")
 
+FTP_HOST = os.getenv("FTP_HOST", "srv455240170.host.ultaserver.net")
+FTP_USER = os.getenv("FTP_USER", "admin_admin")
+FTP_PASS = os.getenv("FTP_PASS", "ApqK*.J6HPbQ2BM")
+FTP_HLS_DIR = os.getenv("FTP_HLS_DIR", "/public_html/wp-content/uploads/secure-hls")  # Example: /public_html/wp-content/uploads/secure-hls
+
 UPLOAD_DIR = "tmp_videos"
-HLS_UPLOAD_DIR = "/path/to/your/wp-content/uploads/secure-hls"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-os.makedirs(HLS_UPLOAD_DIR, exist_ok=True)
 
 # AES Functions
 def pad(s):
@@ -51,7 +55,7 @@ def download_video(url):
         filename = ydl.prepare_filename(info).replace(".webm", ".mp4")
         return filename, title, height
 
-# Convert to multi-resolution HLS based on source height
+# Convert to multi-res HLS
 def convert_to_hls_multires(mp4_path, output_folder, max_height):
     os.makedirs(output_folder, exist_ok=True)
     streams = []
@@ -96,13 +100,40 @@ def convert_to_hls_multires(mp4_path, output_folder, max_height):
     subprocess.run(cmd, check=True)
     return os.path.join(output_folder, 'master.m3u8')
 
-# Upload via WordPress REST API
-def upload_to_wordpress(hls_folder, title):
+# Upload to FTP
+
+def upload_folder_to_ftp(local_folder, ftp_base_path):
+    ftp = FTP(FTP_HOST)
+    ftp.login(user=FTP_USER, passwd=FTP_PASS)
+    folder_name = os.path.basename(local_folder)
+    remote_path = f"{ftp_base_path}/{folder_name}"
+
+    def upload_dir(path, remote):
+        try:
+            ftp.mkd(remote)
+        except:
+            pass
+        ftp.cwd(remote)
+        for item in os.listdir(path):
+            local_item = os.path.join(path, item)
+            if os.path.isdir(local_item):
+                upload_dir(local_item, item)
+                ftp.cwd("..")
+            else:
+                with open(local_item, 'rb') as f:
+                    ftp.storbinary(f"STOR {item}", f)
+
+    upload_dir(local_folder, remote_path)
+    ftp.quit()
+    return folder_name
+
+# Upload to WP
+
+def upload_to_wordpress(post_folder_name, title):
     session = requests.Session()
     session.auth = (WP_USER, WP_PASS)
 
-    rel_path = os.path.basename(hls_folder)
-    full_url = f"{WP_SITE}/wp-content/uploads/secure-hls/{rel_path}/master.m3u8"
+    full_url = f"{WP_SITE}/wp-content/uploads/secure-hls/{post_folder_name}/master.m3u8"
     encrypted = encrypt_url(full_url, SECRET_KEY)
     stream_url = f"{WP_SITE}/stream.php?hls={quote(encrypted)}"
 
@@ -146,13 +177,9 @@ if __name__ == "__main__":
         hls_output = os.path.abspath(f"{UPLOAD_DIR}/{folder_name}")
 
         convert_to_hls_multires(mp4_path, hls_output, max_height)
+        uploaded_folder = upload_folder_to_ftp(hls_output, FTP_HLS_DIR)
+        upload_to_wordpress(uploaded_folder, title)
 
-        # Move to WP uploads
-        final_path = os.path.join(HLS_UPLOAD_DIR, folder_name)
-        shutil.move(hls_output, final_path)
-
-        upload_to_wordpress(final_path, title)
-
-        # Clean up
         os.remove(mp4_path)
-        print("🧹 Cleaned up downloaded video.")
+        shutil.rmtree(hls_output)
+        print("🧹 Cleaned up temporary files.")
