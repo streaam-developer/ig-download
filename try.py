@@ -59,8 +59,8 @@ def download_video(url):
 def convert_to_hls_multires(mp4_path, output_folder, max_height):
     os.makedirs(output_folder, exist_ok=True)
     streams = []
-    filters = []
-    var_map = []
+    filter_parts = []
+    var_map_parts = []
 
     if max_height >= 1080:
         streams.append(("1920", "1080", "5000k"))
@@ -69,9 +69,11 @@ def convert_to_hls_multires(mp4_path, output_folder, max_height):
     if max_height >= 360:
         streams.append(("640", "360", "1000k"))
 
-    filter_split = f"[0:v]split={len(streams)}" + ''.join(f"[v{i}]" for i in range(len(streams))) + ";"
-    filters = [f"[v{i}]scale=w={w}:h={h}[v{i}out]" for i, (w, h, _) in enumerate(streams)]
-    filter_complex = filter_split + ';'.join(filters)
+    split_video = f"[0:v]split={len(streams)}" + ''.join(f"[v{i}]" for i in range(len(streams))) + ";"
+    scale_filters = [f"[v{i}]scale=w={w}:h={h}[v{i}out]" for i, (w, h, _) in enumerate(streams)]
+    audio_split = f"[0:a]asplit={len(streams)}" + ''.join(f"[a{i}]" for i in range(len(streams))) + ";"
+
+    filter_complex = split_video + audio_split + ';'.join(scale_filters)
 
     cmd = [
         'ffmpeg', '-i', mp4_path,
@@ -79,19 +81,26 @@ def convert_to_hls_multires(mp4_path, output_folder, max_height):
     ]
 
     for i, (_, _, bitrate) in enumerate(streams):
-        cmd += ['-map', f'[v{i}out]', '-c:v:' + str(i), 'libx264', '-b:v:' + str(i), bitrate]
+        cmd += [
+            '-map', f'[v{i}out]', '-map', f'[a{i}]',
+            f'-c:v:{i}', 'libx264', f'-b:v:{i}', bitrate,
+            f'-c:a:{i}', 'aac', '-b:a', '128k'
+        ]
+        var_map_parts.append(f'v:{i},a:{i},name:{streams[i][1]}p')
 
-    cmd += ['-map', '0:a', '-c:a', 'aac', '-b:a', '128k',
-            '-f', 'hls',
-            '-var_stream_map', ' '.join([f'v:{i},a:0,name:{h}p' for i, (_, h, _) in enumerate(streams)]),
-            '-master_pl_name', 'master.m3u8',
-            '-hls_time', '10',
-            '-hls_list_size', '0',
-            '-hls_segment_filename', f'{output_folder}/%v/segment_%03d.ts',
-            f'{output_folder}/%v/playlist.m3u8']
+    cmd += [
+        '-f', 'hls',
+        '-var_stream_map', ' '.join(var_map_parts),
+        '-master_pl_name', 'master.m3u8',
+        '-hls_time', '10',
+        '-hls_list_size', '0',
+        '-hls_segment_filename', f'{output_folder}/%v/segment_%03d.ts',
+        f'{output_folder}/%v/playlist.m3u8'
+    ]
 
     subprocess.run(cmd, check=True)
     return os.path.join(output_folder, 'master.m3u8')
+
 
 
 # Upload to FTP
