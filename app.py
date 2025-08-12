@@ -30,6 +30,7 @@ def schedule_file_delete(path, delay=300):
             print(f"❌ Failed to delete {path}: {e}")
     threading.Thread(target=delete_later, daemon=True).start()
 
+# ===== Instagram Reel Download =====
 def download_reel(reel_url):
     global latest_output_file
     try:
@@ -39,13 +40,8 @@ def download_reel(reel_url):
             'merge_output_format': 'mp4',
             'noplaylist': True,
             'quiet': True,
-            'cookiefile': 'cookies.txt',  # <-- Use your cookies file here
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-                              '(KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
-            },
+            'cookiefile': 'cookies.txt',  # Instagram cookies
         }
-
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(reel_url, download=True)
             filename = ydl.prepare_filename(info)
@@ -66,19 +62,17 @@ def download_reel(reel_url):
                 "description": info.get('description', 'No Description'),
                 "filename": safe_name
             }
-
     except Exception as e:
         return {"error": str(e)}
-
 
 def add_styled_text(input_path, output_path, text, fontfile='/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'):
     drawtext_filter = (
         f"drawtext=fontfile='{fontfile}':"
         f"text='{text}':"
-        f"fontcolor=red:"
-        f"fontsize=55:"
+        f"fontcolor=white:"
+        f"fontsize=40:"
         f"box=1:boxcolor=black@0.4:boxborderw=10:"
-        f"x=(w-text_w)/2:y=(h-text_h)-150"
+        f"x=(w-text_w)/2:y=(h-text_h)-100"
     )
     ffmpeg.input(input_path).output(
         output_path,
@@ -89,6 +83,29 @@ def add_styled_text(input_path, output_path, text, fontfile='/usr/share/fonts/tr
         movflags='faststart'
     ).run(overwrite_output=True, quiet=True)
 
+# ===== YouTube Downloader (Video + Playlist) =====
+def extract_youtube_links(url):
+    try:
+        ydl_opts = {
+            'quiet': True,
+            'skip_download': True,
+            'format': 'bv+ba/best',
+            'noplaylist': False,
+        }
+        links = []
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            if 'entries' in info:  # Playlist
+                for entry in info['entries']:
+                    if entry:
+                        links.append(entry.get('url'))
+            else:  # Single video
+                links.append(info.get('url'))
+        return links
+    except Exception as e:
+        return [f"Error: {e}"]
+
+# ===== Routes =====
 @app.route('/', methods=['GET', 'POST'])
 def index():
     info = None
@@ -97,13 +114,18 @@ def index():
         info = download_reel(reel_url)
     return render_template('index.html', info=info)
 
+@app.route('/youtube', methods=['GET', 'POST'])
+def youtube():
+    links = None
+    if request.method == 'POST':
+        yt_url = request.form['yt_url']
+        links = extract_youtube_links(yt_url)
+    return render_template('youtube.html', links=links)
+
 @app.route('/download')
 def download_file():
     global latest_output_file
     return send_from_directory(EDITED_DIR, latest_output_file, as_attachment=True)
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=5000, debug=False)
-
-
-
+    app.run(host="0.0.0.0", port=5000, debug=True)
