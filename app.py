@@ -91,6 +91,11 @@ def extract_youtube_links(url):
             'skip_download': True,
             'format': 'bv+ba/best',
             'noplaylist': False,
+            'cookiefile': 'youtube_cookies.txt',  # <--- Use your YouTube cookies here
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+                              '(KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
+            },
         }
         links = []
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -104,7 +109,7 @@ def extract_youtube_links(url):
         return links
     except Exception as e:
         return [f"Error: {e}"]
-
+        
 # ===== Routes =====
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -129,3 +134,4 @@ def download_file():
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5000, debug=True)
+
