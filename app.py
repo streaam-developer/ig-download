@@ -226,6 +226,6 @@ def download_edited(filename):
     return send_from_directory(EDITED_DIR, filename, as_attachment=True)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=4567, debug=True)
 
 
