@@ -30,16 +30,16 @@ import random
 
 # --- helpers ---
 def ydl_opts_for_instagram(output_path: Path):
-    """Base yt-dlp options for Instagram, always reload cookies."""
+    """Base yt-dlp options for Instagram, always reload."""
     opts = {
         "outtmpl": str(output_path / "%(title)s_%(id)s.%(ext)s"),
         "format": "bv*+ba/b",
         "merge_output_format": "mp4",
         "noplaylist": True,
-        "concurrent_fragment_downloads": 4,
-        "retries": 10,
-        "fragment_retries": 10,
-        "http_chunk_size": 10485760,
+        "concurrent_fragment_downloads": 8,  # speed boost
+        "retries": 15,
+        "fragment_retries": 15,
+        "http_chunk_size": 10485760,  # 10 MB
         "quiet": False,
         "no_warnings": False,
         "ignoreerrors": False,
@@ -57,8 +57,9 @@ def ydl_opts_for_instagram(output_path: Path):
         }
     }
 
+    # Always add cookies if available
     if COOKIES_FILE.exists():
-        opts["cookiefile"] = str(COOKIES_FILE)
+        opts["cookies"] = str(COOKIES_FILE)
     else:
         print(f"[WARNING] Cookies file not found: {COOKIES_FILE}")
 
