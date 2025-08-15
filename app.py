@@ -25,8 +25,12 @@ def sanitize_filename(name: str) -> str:
     name = re.sub(r"[^\w\-. ]+", "_", name)
     return name.strip()[:120] or f"ig_{uuid.uuid4().hex[:8]}"
 
+import time
+import random
+
+# --- helpers ---
 def ydl_opts_for_instagram(output_path: Path):
-    """Base yt-dlp options for Instagram."""
+    """Base yt-dlp options for Instagram, always reload cookies."""
     opts = {
         "outtmpl": str(output_path / "%(title)s_%(id)s.%(ext)s"),
         "format": "bv*+ba/b",
@@ -36,7 +40,7 @@ def ydl_opts_for_instagram(output_path: Path):
         "retries": 10,
         "fragment_retries": 10,
         "http_chunk_size": 10485760,
-        "quiet": False,  # show logs for debugging
+        "quiet": False,
         "no_warnings": False,
         "ignoreerrors": False,
         "geo_bypass": True,
@@ -45,38 +49,45 @@ def ydl_opts_for_instagram(output_path: Path):
         "nocheckcertificate": True,
         "overwrites": True,
         "headers": {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                          "AppleWebKit/537.36 (KHTML, like Gecko) "
-                          "Chrome/115.0.0.0 Safari/537.36"
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/115.0.0.0 Safari/537.36"
+            )
         }
     }
-    # Always pass cookies file explicitly
+
     if COOKIES_FILE.exists():
         opts["cookiefile"] = str(COOKIES_FILE)
     else:
         print(f"[WARNING] Cookies file not found: {COOKIES_FILE}")
+
     return opts
-    
+
+
 def extract_metadata_only(url: str):
-    """Extract only metadata (no download)."""
+    """Extract metadata only (fresh session)."""
     opts = ydl_opts_for_instagram(DL_DIR)
     opts["skip_download"] = True
     with yt_dlp.YoutubeDL(opts) as ydl:
         return ydl.extract_info(url, download=False)
 
+
 def download_instagram(url: str):
-    """Download Instagram media and return file path + info."""
+    """Download Instagram media with fresh cookies per request."""
+    # Small random delay to avoid Instagram bot detection
+    time.sleep(random.uniform(1.0, 2.5))
+
     opts = ydl_opts_for_instagram(DL_DIR)
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)
 
-        # Best file path from requested downloads
+        # Get best downloaded file
         if "requested_downloads" in info and info["requested_downloads"]:
             fp = info["requested_downloads"][0].get("filepath")
             if fp and os.path.exists(fp):
                 return Path(fp), info
 
-        # Fallback to prepared filename
         filename = ydl.prepare_filename(info)
         if filename and not filename.endswith(".mp4"):
             mp4_candidate = Path(filename).with_suffix(".mp4")
@@ -208,4 +219,5 @@ def download_edited(filename):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
+
 
