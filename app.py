@@ -15,7 +15,7 @@ EDITED_DIR = DL_DIR / "edited"
 DL_DIR.mkdir(parents=True, exist_ok=True)
 EDITED_DIR.mkdir(parents=True, exist_ok=True)
 
-COOKIES_FILE = BASE_DIR / "cookies.txt"  # optional
+COOKIES_FILE = "cookies.txt"  # optional
 
 # ---- Helpers ----
 
@@ -190,3 +190,4 @@ def download_edited(filename):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
+
