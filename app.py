@@ -36,19 +36,27 @@ def ydl_opts_for_instagram(output_path: Path):
         "retries": 10,
         "fragment_retries": 10,
         "http_chunk_size": 10485760,
-        "quiet": True,
-        "no_warnings": True,
+        "quiet": False,  # show logs for debugging
+        "no_warnings": False,
         "ignoreerrors": False,
         "geo_bypass": True,
         "skip_download": False,
         "writethumbnail": False,
         "nocheckcertificate": True,
         "overwrites": True,
+        "headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                          "AppleWebKit/537.36 (KHTML, like Gecko) "
+                          "Chrome/115.0.0.0 Safari/537.36"
+        }
     }
+    # Always pass cookies file explicitly
     if COOKIES_FILE.exists():
         opts["cookiefile"] = str(COOKIES_FILE)
+    else:
+        print(f"[WARNING] Cookies file not found: {COOKIES_FILE}")
     return opts
-
+    
 def extract_metadata_only(url: str):
     """Extract only metadata (no download)."""
     opts = ydl_opts_for_instagram(DL_DIR)
@@ -200,3 +208,4 @@ def download_edited(filename):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
+
