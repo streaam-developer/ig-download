@@ -16,16 +16,17 @@ DL_DIR.mkdir(parents=True, exist_ok=True)
 EDITED_DIR.mkdir(parents=True, exist_ok=True)
 
 # Path to cookies file in main directory
-COOKIES_FILE = BASE_DIR / "cookies.txt"  # now a Path object
+COOKIES_FILE = BASE_DIR / "cookies.txt"  # Now a Path object
 
 # ---- Helpers ----
 
 def sanitize_filename(name: str) -> str:
+    """Sanitize filenames for safe saving."""
     name = re.sub(r"[^\w\-. ]+", "_", name)
     return name.strip()[:120] or f"ig_{uuid.uuid4().hex[:8]}"
 
 def ydl_opts_for_instagram(output_path: Path):
-    # Fast + HQ
+    """Base yt-dlp options for Instagram."""
     opts = {
         "outtmpl": str(output_path / "%(title)s_%(id)s.%(ext)s"),
         "format": "bv*+ba/b",
@@ -44,38 +45,42 @@ def ydl_opts_for_instagram(output_path: Path):
         "nocheckcertificate": True,
         "overwrites": True,
     }
-    # Add cookies if file exists
     if COOKIES_FILE.exists():
         opts["cookiefile"] = str(COOKIES_FILE)
     return opts
 
 def extract_metadata_only(url: str):
+    """Extract only metadata (no download)."""
     opts = ydl_opts_for_instagram(DL_DIR)
     opts["skip_download"] = True
     with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(url, download=False)
-    return info
+        return ydl.extract_info(url, download=False)
 
 def download_instagram(url: str):
+    """Download Instagram media and return file path + info."""
     opts = ydl_opts_for_instagram(DL_DIR)
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)
+
+        # Best file path from requested downloads
         if "requested_downloads" in info and info["requested_downloads"]:
-            best = info["requested_downloads"][0]
-            fp = best.get("filepath")
+            fp = info["requested_downloads"][0].get("filepath")
             if fp and os.path.exists(fp):
                 return Path(fp), info
+
+        # Fallback to prepared filename
         filename = ydl.prepare_filename(info)
         if filename and not filename.endswith(".mp4"):
             mp4_candidate = Path(filename).with_suffix(".mp4")
             if mp4_candidate.exists():
                 return mp4_candidate, info
+
         return Path(filename), info
 
 def apply_edits(input_path: Path, *, start=None, end=None, watermark=None, scale=None) -> Path:
+    """Apply optional edits to the video."""
     output = EDITED_DIR / f"edited_{input_path.stem}.mp4"
 
-    # Build video filter chain string
     vf_filters = []
     if scale in ("1080x1920", "720x1280"):
         w, h = scale.split("x")
@@ -84,15 +89,17 @@ def apply_edits(input_path: Path, *, start=None, end=None, watermark=None, scale
     if watermark:
         text = watermark.replace(':', r'\:').replace("'", r"\'")
         vf_filters.append(
-            f"drawtext=text='{text}':x=w-tw-20:y=h-th-20:fontsize=24:box=1:boxborderw=10:boxcolor=black@0.4"
+            f"drawtext=text='{text}':x=w-tw-20:y=h-th-20:fontsize=24:"
+            f"box=1:boxborderw=10:boxcolor=black@0.4"
         )
+
     vf_chain = ",".join(vf_filters) if vf_filters else None
 
-    # Inputs (with optional trim)
+    # Input kwargs for trimming
     input_kwargs = {}
     if start is not None:
         input_kwargs["ss"] = start
-    if end is not None and start is not None and end > start:
+    if end is not None and (start is None or end > start):
         input_kwargs["to"] = end
 
     vin = ffmpeg.input(str(input_path), **input_kwargs)
@@ -111,8 +118,7 @@ def apply_edits(input_path: Path, *, start=None, end=None, watermark=None, scale
             vcodec="copy", acodec="copy", movflags="+faststart"
         )
 
-    out = ffmpeg.overwrite_output(out)
-    ffmpeg.run(out, capture_stderr=True)
+    ffmpeg.run(ffmpeg.overwrite_output(out), capture_stderr=True)
     return output
 
 # ---- Routes ----
@@ -129,43 +135,45 @@ def api_instagram():
         if not url:
             return jsonify({"ok": False, "error": "No URL provided"}), 400
 
-        mode = data.get("mode") or "normal"   # normal or edited
+        mode = data.get("mode", "normal")
         start = data.get("start")
         end = data.get("end")
         watermark = data.get("watermark")
         scale = data.get("scale")
 
-        # metadata first (exact description)
+        # Get metadata first
         info = extract_metadata_only(url)
         description = (info.get("description") or "").strip()
 
-        # download media
+        # Download
         media_path, _ = download_instagram(url)
         final_path = media_path
 
         if mode == "edited":
             def to_float(x):
                 try:
-                    if x is None or x == "":
-                        return None
-                    return float(x)
-                except Exception:
+                    return float(x) if x not in (None, "") else None
+                except ValueError:
                     return None
-            s = to_float(start)
-            e = to_float(end)
-            final_path = apply_edits(media_path, start=s, end=e, watermark=watermark, scale=scale)
 
-        # prepare response
-        rel = final_path.name
-        if final_path.parent.name == "edited":
-            file_url = f"/download/edited/{rel}"
+            final_path = apply_edits(
+                media_path,
+                start=to_float(start),
+                end=to_float(end),
+                watermark=watermark,
+                scale=scale
+            )
+
+        # File URL
+        if final_path.parent == EDITED_DIR:
+            file_url = f"/download/edited/{final_path.name}"
         else:
-            file_url = f"/download/{rel}"
+            file_url = f"/download/{final_path.name}"
 
         return jsonify({
             "ok": True,
             "file": file_url,
-            "filename": rel,
+            "filename": final_path.name,
             "description": description,
             "title": info.get("title") or "",
             "uploader": info.get("uploader") or "",
@@ -178,14 +186,14 @@ def api_instagram():
 
 @app.route("/download/<path:filename>", methods=["GET"])
 def download_raw(filename):
-    path = (DL_DIR / filename)
+    path = DL_DIR / filename
     if not path.exists():
         abort(404)
     return send_from_directory(DL_DIR, filename, as_attachment=True)
 
 @app.route("/download/edited/<path:filename>", methods=["GET"])
 def download_edited(filename):
-    path = (EDITED_DIR / filename)
+    path = EDITED_DIR / filename
     if not path.exists():
         abort(404)
     return send_from_directory(EDITED_DIR, filename, as_attachment=True)
