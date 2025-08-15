@@ -48,18 +48,15 @@ def ydl_opts_for_instagram(output_path: Path):
         "writethumbnail": False,
         "nocheckcertificate": True,
         "overwrites": True,
-        "headers": {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/115.0.0.0 Safari/537.36"
-            )
-        }
+        'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+                              '(KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
+            },
     }
 
     # Always add cookies if available
     if COOKIES_FILE.exists():
-        opts["cookies"] = str(COOKIES_FILE)
+        opts["cookiefile"] = str(COOKIES_FILE)
     else:
         print(f"[WARNING] Cookies file not found: {COOKIES_FILE}")
 
