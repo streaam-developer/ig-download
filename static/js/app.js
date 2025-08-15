@@ -9,6 +9,8 @@ const editor = $("#editor");
 const startIn = $("#start");
 const endIn = $("#end");
 const watermarkIn = $("#watermark");
+// Force default watermark text for edited downloads
+watermarkIn.value = watermarkIn.value && watermarkIn.value.trim() ? watermarkIn.value : 'Check Bio Link';
 const scaleIn = $("#scale");
 
 const result = $("#result");
