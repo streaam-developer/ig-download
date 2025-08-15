@@ -97,20 +97,19 @@ def download_instagram(url: str):
         return Path(filename), info
 
 def apply_edits(input_path: Path, *, start=None, end=None, watermark=None, scale=None) -> Path:
-    """Apply optional edits to the video."""
+    """Apply optional edits to the video with speed optimization."""
     output = EDITED_DIR / f"edited_{input_path.stem}.mp4"
 
+    # Build video filter chain
     vf_filters = []
     if scale in ("1080x1920", "720x1280"):
         w, h = scale.split("x")
-        vf_filters.append(f"scale={w}:{h}:force_original_aspect_ratio=decrease")
-        vf_filters.append(f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2")
+        vf_filters.append(f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2")
     if watermark:
-        # Force bottom-center white text with shadow and semi-transparent box
         text = watermark.replace(':', r'\:').replace("'", r"\'")
         vf_filters.append(
             f"drawtext=text='{text}':x=(w-tw)/2:y=h-th-40:fontsize=24:"
-            f"box=1:boxborderw=10:boxcolor=black@0.4"
+            f"box=1:boxborderw=10:boxcolor=black@0.4:fontcolor=white"
         )
 
     vf_chain = ",".join(vf_filters) if vf_filters else None
@@ -123,23 +122,31 @@ def apply_edits(input_path: Path, *, start=None, end=None, watermark=None, scale
         input_kwargs["to"] = end
 
     vin = ffmpeg.input(str(input_path), **input_kwargs)
-    ain = ffmpeg.input(str(input_path), **input_kwargs)
 
     if vf_chain:
+        # Re-encode only if filters applied
         out = ffmpeg.output(
-            vin.video, ain.audio, str(output),
-            vf=vf_chain, vcodec="libx264", acodec="aac",
-            movflags="+faststart", video_bitrate="3000k",
-            audio_bitrate="160k", preset="veryfast"
+            vin, str(output),
+            vf=vf_chain,
+            vcodec="libx264",
+            preset="ultrafast",          # Fastest preset
+            tune="fastdecode",           # Optimize for playback
+            crf=18,                       # Near lossless quality
+            acodec="aac",
+            audio_bitrate="160k",
+            movflags="+faststart"
         )
     else:
+        # If only trimming, do stream copy (no re-encode)
         out = ffmpeg.output(
-            vin.video, ain.audio, str(output),
-            vcodec="copy", acodec="copy", movflags="+faststart"
+            vin, str(output),
+            vcodec="copy", acodec="copy",
+            movflags="+faststart"
         )
 
     ffmpeg.run(ffmpeg.overwrite_output(out), capture_stderr=True)
     return output
+
 
 # ---- Routes ----
 
