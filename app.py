@@ -5,7 +5,22 @@ import traceback
 from pathlib import Path
 from flask import Flask, request, jsonify, render_template, send_from_directory, abort
 import yt_dlp
-import ffmpeg
+import time
+import random
+
+# --- ffmpeg-python check ---
+try:
+    import ffmpeg  # Must be ffmpeg-python
+    if not hasattr(ffmpeg, "input"):
+        raise ImportError("Wrong ffmpeg package installed")
+except ImportError as e:
+    raise ImportError(
+        "You have the wrong ffmpeg package. Run:\n"
+        "  pip uninstall -y ffmpeg\n"
+        "  pip install ffmpeg-python\n"
+        "Also make sure system ffmpeg is installed:\n"
+        "  apt install -y ffmpeg"
+    )
 
 app = Flask(__name__)
 
@@ -15,8 +30,7 @@ EDITED_DIR = DL_DIR / "edited"
 DL_DIR.mkdir(parents=True, exist_ok=True)
 EDITED_DIR.mkdir(parents=True, exist_ok=True)
 
-# Path to cookies file in main directory
-COOKIES_FILE = BASE_DIR / "cookies.txt"  # Now a Path object
+COOKIES_FILE = BASE_DIR / "cookies.txt"
 
 # ---- Helpers ----
 
@@ -25,21 +39,17 @@ def sanitize_filename(name: str) -> str:
     name = re.sub(r"[^\w\-. ]+", "_", name)
     return name.strip()[:120] or f"ig_{uuid.uuid4().hex[:8]}"
 
-import time
-import random
-
-# --- helpers ---
 def ydl_opts_for_instagram(output_path: Path):
-    """Base yt-dlp options for Instagram, always reload."""
+    """Base yt-dlp options for Instagram."""
     opts = {
         "outtmpl": str(output_path / "%(title)s_%(id)s.%(ext)s"),
         "format": "bv*+ba/b",
         "merge_output_format": "mp4",
         "noplaylist": True,
-        "concurrent_fragment_downloads": 8,  # speed boost
+        "concurrent_fragment_downloads": 8,
         "retries": 15,
         "fragment_retries": 15,
-        "http_chunk_size": 10485760,  # 10 MB
+        "http_chunk_size": 10485760,
         "quiet": False,
         "no_warnings": False,
         "ignoreerrors": False,
@@ -48,13 +58,14 @@ def ydl_opts_for_instagram(output_path: Path):
         "writethumbnail": False,
         "nocheckcertificate": True,
         "overwrites": True,
-        'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-                              '(KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
-            },
+        "http_headers": {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+            ),
+        },
     }
 
-    # Always add cookies if available
     if COOKIES_FILE.exists():
         opts["cookiefile"] = str(COOKIES_FILE)
     else:
@@ -62,25 +73,20 @@ def ydl_opts_for_instagram(output_path: Path):
 
     return opts
 
-
 def extract_metadata_only(url: str):
-    """Extract metadata only (fresh session)."""
+    """Extract metadata only."""
     opts = ydl_opts_for_instagram(DL_DIR)
     opts["skip_download"] = True
     with yt_dlp.YoutubeDL(opts) as ydl:
         return ydl.extract_info(url, download=False)
 
-
 def download_instagram(url: str):
-    """Download Instagram media with fresh cookies per request."""
-    # Small random delay to avoid Instagram bot detection
+    """Download Instagram media."""
     time.sleep(random.uniform(1.0, 2.5))
-
     opts = ydl_opts_for_instagram(DL_DIR)
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)
 
-        # Get best downloaded file
         if "requested_downloads" in info and info["requested_downloads"]:
             fp = info["requested_downloads"][0].get("filepath")
             if fp and os.path.exists(fp):
@@ -95,16 +101,23 @@ def download_instagram(url: str):
         return Path(filename), info
 
 def apply_edits(input_path: Path, *, start=None, end=None, watermark=None, scale=None) -> Path:
-    """Apply optional edits to the video with speed optimization."""
+    """Apply optional edits to the video."""
     output = EDITED_DIR / f"edited_{input_path.stem}.mp4"
 
-    # Build video filter chain
     vf_filters = []
     if scale in ("1080x1920", "720x1280"):
         w, h = scale.split("x")
-        vf_filters.append(f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2")
+        vf_filters.append(
+            f"scale={w}:{h}:force_original_aspect_ratio=decrease,"
+            f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2"
+        )
     if watermark:
-        text = watermark.replace(':', r'\:').replace("'", r"\'")
+        text = (
+            watermark.replace("\\", "\\\\")
+            .replace(":", r"\:")
+            .replace("'", r"\'")
+            .replace('"', r"\"")
+        )
         vf_filters.append(
             f"drawtext=text='{text}':x=(w-tw)/2:y=h-th-40:fontsize=24:"
             f"box=1:boxborderw=10:boxcolor=black@0.4:fontcolor=white"
@@ -112,7 +125,6 @@ def apply_edits(input_path: Path, *, start=None, end=None, watermark=None, scale
 
     vf_chain = ",".join(vf_filters) if vf_filters else None
 
-    # Input kwargs for trimming
     input_kwargs = {}
     if start is not None:
         input_kwargs["ss"] = start
@@ -122,20 +134,18 @@ def apply_edits(input_path: Path, *, start=None, end=None, watermark=None, scale
     vin = ffmpeg.input(str(input_path), **input_kwargs)
 
     if vf_chain:
-        # Re-encode only if filters applied
         out = ffmpeg.output(
             vin, str(output),
             vf=vf_chain,
             vcodec="libx264",
-            preset="ultrafast",          # Fastest preset
-            tune="fastdecode",           # Optimize for playback
-            crf=18,                       # Near lossless quality
+            preset="veryfast",
+            tune="fastdecode",
+            crf=18,
             acodec="aac",
             audio_bitrate="160k",
             movflags="+faststart"
         )
     else:
-        # If only trimming, do stream copy (no re-encode)
         out = ffmpeg.output(
             vin, str(output),
             vcodec="copy", acodec="copy",
@@ -144,7 +154,6 @@ def apply_edits(input_path: Path, *, start=None, end=None, watermark=None, scale
 
     ffmpeg.run(ffmpeg.overwrite_output(out), capture_stderr=True)
     return output
-
 
 # ---- Routes ----
 
@@ -166,11 +175,12 @@ def api_instagram():
         watermark = data.get("watermark")
         scale = data.get("scale")
 
-        # Get metadata first
         info = extract_metadata_only(url)
         description = (info.get("description") or "").strip()
+        thumb = info.get("thumbnail")
+        if isinstance(thumb, list):
+            thumb = thumb[0] if thumb else ""
 
-        # Download
         media_path, _ = download_instagram(url)
         final_path = media_path
 
@@ -189,11 +199,11 @@ def api_instagram():
                 scale=scale
             )
 
-        # File URL
-        if final_path.parent == EDITED_DIR:
-            file_url = f"/download/edited/{final_path.name}"
-        else:
-            file_url = f"/download/{final_path.name}"
+        file_url = (
+            f"/download/edited/{final_path.name}"
+            if final_path.parent == EDITED_DIR
+            else f"/download/{final_path.name}"
+        )
 
         return jsonify({
             "ok": True,
@@ -203,7 +213,7 @@ def api_instagram():
             "title": info.get("title") or "",
             "uploader": info.get("uploader") or "",
             "duration": info.get("duration") or "",
-            "thumbnail": info.get("thumbnail") or ""
+            "thumbnail": thumb
         })
     except Exception as e:
         traceback.print_exc()
@@ -225,5 +235,3 @@ def download_edited(filename):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=4567, debug=True)
-
-
