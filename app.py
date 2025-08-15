@@ -106,9 +106,10 @@ def apply_edits(input_path: Path, *, start=None, end=None, watermark=None, scale
         vf_filters.append(f"scale={w}:{h}:force_original_aspect_ratio=decrease")
         vf_filters.append(f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2")
     if watermark:
+        # Force bottom-center white text with shadow and semi-transparent box
         text = watermark.replace(':', r'\:').replace("'", r"\'")
         vf_filters.append(
-            f"drawtext=text='{text}':x=w-tw-20:y=h-th-20:fontsize=24:"
+            f"drawtext=text='{text}':x=(w-tw)/2:y=h-th-40:fontsize=24:"
             f"box=1:boxborderw=10:boxcolor=black@0.4"
         )
 
