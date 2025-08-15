@@ -1,137 +1,192 @@
 import os
-import ffmpeg
+import re
+import uuid
+import traceback
+from pathlib import Path
+from flask import Flask, request, jsonify, render_template, send_from_directory, abort
 import yt_dlp
-import threading
-import time
-from flask import Flask, request, render_template, send_from_directory
-from werkzeug.utils import secure_filename
+import ffmpeg
 
 app = Flask(__name__)
 
-# Directories
-RAW_DIR = 'reels'
-EDITED_DIR = 'edited'
-os.makedirs(RAW_DIR, exist_ok=True)
-os.makedirs(EDITED_DIR, exist_ok=True)
+BASE_DIR = Path(__file__).resolve().parent
+DL_DIR = BASE_DIR / "downloads"
+EDITED_DIR = DL_DIR / "edited"
+DL_DIR.mkdir(parents=True, exist_ok=True)
+EDITED_DIR.mkdir(parents=True, exist_ok=True)
 
-latest_output_file = ""
+COOKIES_FILE = BASE_DIR / "cookies.txt"  # optional
 
-def sanitize_filename(name):
-    return "".join(c for c in name if c.isalnum() or c in "._- ").strip()
+# ---- Helpers ----
 
-def schedule_file_delete(path, delay=300):
-    def delete_later():
-        time.sleep(delay)
-        try:
-            if os.path.exists(path):
-                os.remove(path)
-                print(f"🗑️ Deleted file: {path}")
-        except Exception as e:
-            print(f"❌ Failed to delete {path}: {e}")
-    threading.Thread(target=delete_later, daemon=True).start()
+def sanitize_filename(name: str) -> str:
+    name = re.sub(r"[^\w\-. ]+", "_", name)
+    return name.strip()[:120] or f"ig_{uuid.uuid4().hex[:8]}"
 
-# ===== Instagram Reel Download =====
-def download_reel(reel_url):
-    global latest_output_file
-    try:
-        ydl_opts = {
-            'format': 'bv+ba/best',
-            'outtmpl': os.path.join(RAW_DIR, '%(title).80s.%(ext)s'),
-            'merge_output_format': 'mp4',
-            'noplaylist': True,
-            'quiet': True,
-            'cookiefile': 'cookies.txt',  # Instagram cookies
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(reel_url, download=True)
-            filename = ydl.prepare_filename(info)
-            if not filename.endswith('.mp4'):
-                filename = os.path.splitext(filename)[0] + '.mp4'
+def ydl_opts_for_instagram(output_path: Path):
+    # Fast + HQ
+    opts = {
+        "outtmpl": str(output_path / "%(title)s_%(id)s.%(ext)s"),
+        "format": "bv*+ba/b",
+        "merge_output_format": "mp4",
+        "noplaylist": True,
+        "concurrent_fragment_downloads": 4,
+        "retries": 10,
+        "fragment_retries": 10,
+        "http_chunk_size": 10485760,
+        "quiet": True,
+        "no_warnings": True,
+        "ignoreerrors": False,
+        "geo_bypass": True,
+        "skip_download": False,
+        "writethumbnail": False,
+        "nocheckcertificate": True,
+        "overwrites": True,
+    }
+    if COOKIES_FILE.exists():
+        opts["cookiefile"] = str(COOKIES_FILE)
+    return opts
 
-            safe_name = sanitize_filename(os.path.basename(filename))
-            edited_output = os.path.join(EDITED_DIR, safe_name)
+def extract_metadata_only(url: str):
+    opts = ydl_opts_for_instagram(DL_DIR)
+    opts["skip_download"] = True
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+    return info
 
-            add_styled_text(filename, edited_output, "Check Pin Comment")
+def download_instagram(url: str):
+    opts = ydl_opts_for_instagram(DL_DIR)
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        if "requested_downloads" in info and info["requested_downloads"]:
+            best = info["requested_downloads"][0]
+            fp = best.get("filepath")
+            if fp and os.path.exists(fp):
+                return Path(fp), info
+        filename = ydl.prepare_filename(info)
+        if filename and not filename.endswith(".mp4"):
+            mp4_candidate = Path(filename).with_suffix(".mp4")
+            if mp4_candidate.exists():
+                return mp4_candidate, info
+        return Path(filename), info
 
-            schedule_file_delete(filename)
-            schedule_file_delete(edited_output)
+def apply_edits(input_path: Path, *, start=None, end=None, watermark=None, scale=None) -> Path:
+    output = EDITED_DIR / f"edited_{input_path.stem}.mp4"
 
-            latest_output_file = safe_name
-            return {
-                "title": info.get('title', 'No Title'),
-                "description": info.get('description', 'No Description'),
-                "filename": safe_name
-            }
-    except Exception as e:
-        return {"error": str(e)}
+    # Build video filter chain string
+    vf_filters = []
+    if scale in ("1080x1920", "720x1280"):
+        w, h = scale.split("x")
+        vf_filters.append(f"scale={w}:{h}:force_original_aspect_ratio=decrease")
+        vf_filters.append(f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2")
+    if watermark:
+        text = watermark.replace(':', r'\:').replace("'", r"\'")
+        vf_filters.append(
+            f"drawtext=text='{text}':x=w-tw-20:y=h-th-20:fontsize=24:box=1:boxborderw=10:boxcolor=black@0.4"
+        )
+    vf_chain = ",".join(vf_filters) if vf_filters else None
 
-def add_styled_text(input_path, output_path, text, fontfile='/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'):
-    drawtext_filter = (
-        f"drawtext=fontfile='{fontfile}':"
-        f"text='{text}':"
-        f"fontcolor=white:"
-        f"fontsize=40:"
-        f"box=1:boxcolor=black@0.4:boxborderw=10:"
-        f"x=(w-text_w)/2:y=(h-text_h)-100"
-    )
-    ffmpeg.input(input_path).output(
-        output_path,
-        vf=drawtext_filter,
-        vcodec='libx264',
-        acodec='copy',
-        preset='ultrafast',
-        movflags='faststart'
-    ).run(overwrite_output=True, quiet=True)
+    # Inputs (with optional trim)
+    input_kwargs = {}
+    if start is not None:
+        input_kwargs["ss"] = start
+    if end is not None and start is not None and end > start:
+        input_kwargs["to"] = end
 
-# ===== YouTube Downloader (Video + Playlist) =====
-def extract_youtube_links(url):
-    try:
-        ydl_opts = {
-            'quiet': True,
-            'skip_download': True,
-            'format': 'bv+ba/best',
-            'noplaylist': False,
-            'cookiefile': 'youtube_cookies.txt',  # <--- Use your YouTube cookies here
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-                              '(KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
-            },
-        }
-        links = []
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            if 'entries' in info:  # Playlist
-                for entry in info['entries']:
-                    if entry:
-                        links.append(entry.get('url'))
-            else:  # Single video
-                links.append(info.get('url'))
-        return links
-    except Exception as e:
-        return [f"Error: {e}"]
-        
-# ===== Routes =====
-@app.route('/', methods=['GET', 'POST'])
+    vin = ffmpeg.input(str(input_path), **input_kwargs)
+    ain = ffmpeg.input(str(input_path), **input_kwargs)
+
+    if vf_chain:
+        out = ffmpeg.output(
+            vin.video, ain.audio, str(output),
+            vf=vf_chain, vcodec="libx264", acodec="aac",
+            movflags="+faststart", video_bitrate="3000k",
+            audio_bitrate="160k", preset="veryfast"
+        )
+    else:
+        out = ffmpeg.output(
+            vin.video, ain.audio, str(output),
+            vcodec="copy", acodec="copy", movflags="+faststart"
+        )
+
+    out = ffmpeg.overwrite_output(out)
+    ffmpeg.run(out, capture_stderr=True)
+    return output
+
+# ---- Routes ----
+
+@app.route("/", methods=["GET"])
 def index():
-    info = None
-    if request.method == 'POST':
-        reel_url = request.form['url']
-        info = download_reel(reel_url)
-    return render_template('index.html', info=info)
+    return render_template("index.html")
 
-@app.route('/youtube', methods=['GET', 'POST'])
-def youtube():
-    links = None
-    if request.method == 'POST':
-        yt_url = request.form['yt_url']
-        links = extract_youtube_links(yt_url)
-    return render_template('youtube.html', links=links)
+@app.route("/api/instagram", methods=["POST"])
+def api_instagram():
+    try:
+        data = request.get_json(force=True)
+        url = (data.get("url") or "").strip()
+        if not url:
+            return jsonify({"ok": False, "error": "No URL provided"}), 400
 
-@app.route('/download')
-def download_file():
-    global latest_output_file
-    return send_from_directory(EDITED_DIR, latest_output_file, as_attachment=True)
+        mode = data.get("mode") or "normal"   # normal or edited
+        start = data.get("start")
+        end = data.get("end")
+        watermark = data.get("watermark")
+        scale = data.get("scale")
 
-if __name__ == '__main__':
+        # metadata first (exact description)
+        info = extract_metadata_only(url)
+        description = (info.get("description") or "").strip()
+
+        # download media
+        media_path, _ = download_instagram(url)
+        final_path = media_path
+
+        if mode == "edited":
+            def to_float(x):
+                try:
+                    if x is None or x == "":
+                        return None
+                    return float(x)
+                except Exception:
+                    return None
+            s = to_float(start)
+            e = to_float(end)
+            final_path = apply_edits(media_path, start=s, end=e, watermark=watermark, scale=scale)
+
+        # prepare response
+        rel = final_path.name
+        if final_path.parent.name == "edited":
+            file_url = f"/download/edited/{rel}"
+        else:
+            file_url = f"/download/{rel}"
+
+        return jsonify({
+            "ok": True,
+            "file": file_url,
+            "filename": rel,
+            "description": description,
+            "title": info.get("title") or "",
+            "uploader": info.get("uploader") or "",
+            "duration": info.get("duration") or "",
+            "thumbnail": info.get("thumbnail") or ""
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.route("/download/<path:filename>", methods=["GET"])
+def download_raw(filename):
+    path = (DL_DIR / filename)
+    if not path.exists():
+        abort(404)
+    return send_from_directory(DL_DIR, filename, as_attachment=True)
+
+@app.route("/download/edited/<path:filename>", methods=["GET"])
+def download_edited(filename):
+    path = (EDITED_DIR / filename)
+    if not path.exists():
+        abort(404)
+    return send_from_directory(EDITED_DIR, filename, as_attachment=True)
+
+if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
-
