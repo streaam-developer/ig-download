@@ -15,7 +15,8 @@ EDITED_DIR = DL_DIR / "edited"
 DL_DIR.mkdir(parents=True, exist_ok=True)
 EDITED_DIR.mkdir(parents=True, exist_ok=True)
 
-COOKIES_FILE = "cookies.txt"  # optional
+# Path to cookies file in main directory
+COOKIES_FILE = BASE_DIR / "cookies.txt"  # now a Path object
 
 # ---- Helpers ----
 
@@ -43,6 +44,7 @@ def ydl_opts_for_instagram(output_path: Path):
         "nocheckcertificate": True,
         "overwrites": True,
     }
+    # Add cookies if file exists
     if COOKIES_FILE.exists():
         opts["cookiefile"] = str(COOKIES_FILE)
     return opts
@@ -190,4 +192,3 @@ def download_edited(filename):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
-
