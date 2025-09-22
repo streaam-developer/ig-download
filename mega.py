@@ -8,13 +8,7 @@ Telegram Mega Folder Video Downloader & Uploader (with progress bars)
 Requirements
 - Python 3.10+
 - pip install pyrogram tgcrypto mega.py python-magic aiofiles tqdm
-- Optional: install `megadl` from megatools/megacmd if mega.py fails
-
-Config (env vars)
-- API_ID, API_HASH: from https://my.telegram.org
-- SESSION_NAME (optional, for userbot)
-- BOT_TOKEN (if running in bot mode)
-- ALLOWED_USER_ID (Telegram numeric id of owner)
+- Optional: install `megatools` (provides `megatools dl`) or `megadl`
 """
 
 import asyncio
@@ -26,6 +20,8 @@ import tempfile
 from pathlib import Path
 from typing import List
 import time
+import subprocess
+import shutil as sh
 
 from pyrogram import Client, filters
 from pyrogram.types import Message
@@ -35,12 +31,11 @@ try:
 except Exception:
     Mega = None
 
-import subprocess
-
+# ---------------- CONFIG ----------------
 API_ID = int(os.environ.get("API_ID", "27074109"))
 API_HASH = os.environ.get("API_HASH", "301e069d266e091df4bd58353679f3b1")
 SESSION_NAME = os.environ.get("SESSION_NAME", "mega_video_session")
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8292399578:AAH2jrVBWHnCTLCsEr7pcCZF89XqxPCkKRY")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8292399578:AAH2jrVBWHnCTLCsEr7pcCZF89XqxPCkKRY")  # leave empty if userbot
 ALLOWED_USER_ID = int(os.environ.get("ALLOWED_USER_ID", "6471788911"))
 DOWNLOAD_DIR = os.environ.get("DOWNLOAD_DIR", "./downloads")
 VIDEO_EXTS = {"mp4", "mkv", "avi", "mov", "flv", "webm", "ts"}
@@ -52,6 +47,7 @@ MEGA_FILE_RE = re.compile(r"https?://(?:www\.)?mega\.nz/(?:file|#!|#F!)[A-Za-z0-
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 
+# ---------------- MEGA HELPERS ----------------
 def get_mega_client():
     if Mega is None:
         return None
@@ -62,10 +58,22 @@ def get_mega_client():
         return m
 
 
+def find_downloader():
+    """Check if 'megadl' or 'megatools' exists, return best available command."""
+    if sh.which("megadl"):
+        return ["megadl"]
+    elif sh.which("megatools"):
+        return ["megatools", "dl"]
+    else:
+        return None
+
+
 async def download_from_mega_link(link: str, dest_folder: Path) -> List[Path]:
     dest_folder.mkdir(parents=True, exist_ok=True)
     downloaded: List[Path] = []
     m = get_mega_client()
+
+    # First try mega.py
     if m:
         try:
             if hasattr(m, "download_url"):
@@ -82,44 +90,52 @@ async def download_from_mega_link(link: str, dest_folder: Path) -> List[Path]:
                     if pth.is_file():
                         downloaded.append(pth)
                     elif pth.is_dir():
-                        for f in pth.rglob('*'):
+                        for f in pth.rglob("*"):
                             if f.is_file():
                                 downloaded.append(f)
-                downloaded = [p for p in downloaded if p.suffix.lstrip('.').lower() in VIDEO_EXTS]
+                downloaded = [p for p in downloaded if p.suffix.lstrip(".").lower() in VIDEO_EXTS]
                 if downloaded:
                     return downloaded
         except Exception as e:
             print("mega.py failed:", e)
 
+    # Fallback to external tool
+    cmd = find_downloader()
+    if not cmd:
+        print("No megadl or megatools found on system.")
+        return downloaded
+
     try:
-        print("Falling back to megadl...")
-        cmd = ["megadl", "--path", str(dest_folder), link]
-        proc = subprocess.run(cmd, check=False, capture_output=True, text=True)
+        print("Falling back to:", " ".join(cmd))
+        proc = subprocess.run(cmd + ["--path", str(dest_folder), link], check=False, capture_output=True, text=True)
         if proc.returncode == 0:
-            for f in Path(dest_folder).rglob('*'):
-                if f.is_file() and f.suffix.lstrip('.').lower() in VIDEO_EXTS:
+            for f in Path(dest_folder).rglob("*"):
+                if f.is_file() and f.suffix.lstrip(".").lower() in VIDEO_EXTS:
                     downloaded.append(f)
             return downloaded
         else:
-            print("megadl failed:", proc.stderr)
+            print("Downloader failed:", proc.stderr)
     except Exception as e:
-        print("megadl error:", e)
+        print("Downloader error:", e)
 
     return downloaded
 
 
+# ---------------- PROGRESS ----------------
 async def progress_bar(current, total, message: Message, start_time, filename):
     now = time.time()
-    diff = now - start_time
-    if diff == 0:
-        diff = 1
+    diff = max(now - start_time, 1)
     percentage = current * 100 / total if total else 0
     speed = current / diff
     eta = (total - current) / speed if speed > 0 else 0
     bar_length = 20
     filled = int(bar_length * percentage / 100)
     bar = "█" * filled + "—" * (bar_length - filled)
-    text = f"{filename}\n[{bar}] {percentage:.1f}%\n{current//1024//1024}/{total//1024//1024} MB\nSpeed: {speed/1024:.2f} KB/s | ETA: {int(eta)}s"
+    text = (
+        f"{filename}\n[{bar}] {percentage:.1f}%\n"
+        f"{current//1024//1024}/{total//1024//1024} MB\n"
+        f"Speed: {speed/1024:.2f} KB/s | ETA: {int(eta)}s"
+    )
     try:
         await message.edit_text(text)
     except Exception:
@@ -134,7 +150,7 @@ async def upload_and_cleanup(client: Client, chat_id: int, file_path: Path, stat
             document=str(file_path),
             caption=file_path.name,
             progress=progress_bar,
-            progress_args=(status_msg, start, file_path.name)
+            progress_args=(status_msg, start, file_path.name),
         )
         try:
             file_path.unlink()
@@ -144,6 +160,7 @@ async def upload_and_cleanup(client: Client, chat_id: int, file_path: Path, stat
         await status_msg.edit_text(f"Failed {file_path.name}: {e}")
 
 
+# ---------------- APP INIT ----------------
 if BOT_TOKEN:
     app = Client("mega_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 else:
@@ -152,6 +169,7 @@ else:
 semaphore = asyncio.Semaphore(CONCURRENT_JOBS)
 
 
+# ---------------- HANDLERS ----------------
 @app.on_message(filters.private & filters.text)
 async def on_message(client: Client, message: Message):
     if ALLOWED_USER_ID and message.from_user and message.from_user.id != ALLOWED_USER_ID:
@@ -184,7 +202,8 @@ async def on_message(client: Client, message: Message):
     await message.reply_text("All done.")
 
 
-if __name__ == '__main__':
+# ---------------- MAIN ----------------
+if __name__ == "__main__":
     if API_ID == 0 or not API_HASH:
         print("ERROR: Set API_ID and API_HASH")
         sys.exit(1)
