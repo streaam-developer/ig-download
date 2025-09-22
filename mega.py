@@ -4,11 +4,12 @@ Telegram Mega Folder Video Downloader & Uploader (with progress bars)
 - Downloads video files from MEGA folder link one by one
 - Shows upload progress per file with progress bar in Telegram message
 - Deletes local file after successful upload
+- Automatically removes '@BabaJiMega' from filenames and captions
 
 Requirements
 - Python 3.10+
 - pip install pyrogram tgcrypto mega.py python-magic aiofiles tqdm
-- Optional: install `megatools` (provides `megatools dl`) or `megadl`
+- megadl installed and working
 """
 
 import asyncio
@@ -59,11 +60,9 @@ def get_mega_client():
 
 
 def find_downloader():
-    """Check if 'megadl' or 'megatools' exists, return best available command."""
+    """Use megadl if available."""
     if sh.which("megadl"):
         return ["megadl"]
-    elif sh.which("megatools"):
-        return ["megatools", "dl"]
     else:
         return None
 
@@ -99,10 +98,10 @@ async def download_from_mega_link(link: str, dest_folder: Path) -> List[Path]:
         except Exception as e:
             print("mega.py failed:", e)
 
-    # Fallback to external tool
+    # Fallback to external tool (megadl)
     cmd = find_downloader()
     if not cmd:
-        print("No megadl or megatools found on system.")
+        print("No megadl found on system.")
         return downloaded
 
     try:
@@ -148,7 +147,7 @@ async def upload_and_cleanup(client: Client, chat_id: int, file_path: Path, stat
         await client.send_document(
             chat_id,
             document=str(file_path),
-            caption=file_path.name,
+            caption=file_path.name,  # filename without @BabaJiMega
             progress=progress_bar,
             progress_args=(status_msg, start, file_path.name),
         )
@@ -194,9 +193,14 @@ async def on_message(client: Client, message: Message):
                     continue
                 files.sort()
                 for f in files:
-                    status = await message.reply_text(f"Uploading {f.name}...")
-                    await upload_and_cleanup(client, message.chat.id, f, status)
-                    await status.edit_text(f"Uploaded {f.name} ✅")
+                    # Remove @BabaJiMega from filename
+                    clean_name = f.name.replace("@BabaJiMega", "").strip()
+                    new_path = f.with_name(clean_name)
+                    f.rename(new_path)
+
+                    status = await message.reply_text(f"Uploading {clean_name}...")
+                    await upload_and_cleanup(client, message.chat.id, new_path, status)
+                    await status.edit_text(f"Uploaded {clean_name} ✅")
             finally:
                 shutil.rmtree(tmp_dir, ignore_errors=True)
     await message.reply_text("All done.")
