@@ -36,12 +36,7 @@ import re
 
 MEGA_LINK_RE = r"https?://(?:www\.)?mega\.nz/(?:folder|file|#!|#F!)/[A-Za-z0-9_-]+(?:#[A-Za-z0-9_-]+)?"
 
-text = message.text.strip()
-links = re.findall(MEGA_LINK_RE, text)
 
-if not links:
-    await message.reply_text("Send a valid MEGA folder/file link.")
-    return
 # ---------------- UTILS ----------------
 async def progress_bar(current, total, message: Message, start_time, filename):
     now = time.time()
