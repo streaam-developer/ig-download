@@ -24,7 +24,7 @@ from pyrogram.types import Message
 
 # ---------------- CONFIG ----------------
 API_ID = int(os.environ.get("API_ID", "27074109"))
-API_HASH = os.environ.get("API_HASH", "301e069d266e091df4bd58353679f3b1"))
+API_HASH = os.environ.get("API_HASH", "301e069d266e091df4bd58353679f3b1")
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8292399578:AAH2jrVBWHnCTLCsEr7pcCZF89XqxPCkKRY")
 ALLOWED_USER_ID = int(os.environ.get("ALLOWED_USER_ID", "6471788911"))
 DOWNLOAD_DIR = os.environ.get("DOWNLOAD_DIR", "./downloads")
