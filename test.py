@@ -111,7 +111,7 @@ async def main():
     await asyncio.Event().wait()
 
 
-if name == "main":
+if __name__ == "__main__":
     try:
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
