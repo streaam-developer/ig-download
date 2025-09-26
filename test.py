@@ -116,7 +116,7 @@ async def main():
     logger.info("Starting bot...")
     await bot.start()
     logger.info("Bot started. Waiting for commands...")
-    await asyncio.Event().wait()
+    await bot.idle()   # <-- yeh line lagani hai
 
 
 if __name__ == "__main__":
