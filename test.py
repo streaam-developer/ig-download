@@ -5,13 +5,14 @@ Bot that generates join-request link and checks join request/member status.
 Requirements:
     pip install pyrogram tgcrypto python-dotenv
 Run:
+    export API_ID="123456"
+    export API_HASH="abcdef1234567890abcdef1234567890"
     export BOT_TOKEN="123:ABC..."
     export CHANNEL_ID="-1001234567890"   # your private channel
     export ADMIN_ID="123456789"          # your Telegram user id (for error logs)
-    python join_request_bot.py
+    python3 join_request_bot.py
 """
-from pyrogram import idle
-from pyrogram import Client, filters
+
 import os
 import asyncio
 import logging
@@ -23,9 +24,9 @@ from pyrogram.types import Message
 
 # --- Load env vars ---
 API_ID = int(os.environ.get("API_ID", "27074109"))
-API_HASH = os.environ.get("API_HASH", "301e069d266e091df4bd58353679f3b1")
+API_HASH = os.environ.get("API_HASH", "301e069d266e091df4bd58353679f3b1"))
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8292399578:AAH2jrVBWHnCTLCsEr7pcCZF89XqxPCkKRY" )
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8292399578:AAH2jrVBWHnCTLCsEr7pcCZF89XqxPCkKRY")
 CHANNEL_ID = int(os.getenv("CHANNEL_ID", "-1003087895191"))
 ADMIN_ID = int(os.getenv("ADMIN_ID", "7006516881"))
 APP_NAME = "joinreq_direct"
@@ -45,7 +46,7 @@ logger.addHandler(logging.StreamHandler())
 
 # --- Bot client ---
 bot = Client(
-    "joinreq_direct",
+    APP_NAME,
     api_id=API_ID,
     api_hash=API_HASH,
     bot_token=BOT_TOKEN,
@@ -62,13 +63,11 @@ async def send_error(e: Exception, context: str):
     except Exception as send_err:
         logger.error("Failed to send error log to admin: %s", send_err)
 
-
 # --- Commands ---
 
 @bot.on_message(filters.private & filters.command("start"))
 async def start_cmd(c: Client, m: Message):
     try:
-        # Generate invite link with join request enabled
         link = await c.create_chat_invite_link(
             chat_id=CHANNEL_ID,
             creates_join_request=True,
@@ -83,15 +82,12 @@ async def start_cmd(c: Client, m: Message):
         await send_error(e, "start_cmd")
         await m.reply_text("Error while generating invite link. Admin notified.")
 
-
 @bot.on_message(filters.private & filters.command("check"))
 async def check_cmd(c: Client, m: Message):
     try:
         user_id = m.from_user.id
         cm = await c.get_chat_member(CHANNEL_ID, user_id)
         status = cm.status
-
-        # Convert enum to human-readable
         try:
             status_str = enums.ChatMemberStatus(status).name
         except Exception:
@@ -100,25 +96,21 @@ async def check_cmd(c: Client, m: Message):
         if status_str in ["MEMBER", "ADMINISTRATOR", "OWNER"]:
             await m.reply_text(f"✅ You are already a <b>{status_str}</b> of the channel.")
         else:
-            # If not member → Telegram does NOT give pending info via API
             await m.reply_text(
                 "ℹ️ You are <b>not a member yet</b>.\n\n"
                 "If you clicked the join link, your request is pending for admin approval."
             )
-
         logger.info("Checked status for user=%s: %s", user_id, status_str)
     except Exception as e:
         await send_error(e, "check_cmd")
         await m.reply_text("Error while checking status. Admin notified.")
-
 
 # --- Startup ---
 async def main():
     logger.info("Starting bot...")
     await bot.start()
     logger.info("Bot started. Waiting for commands...")
-    await bot.idle()   # <-- yeh line lagani hai
-
+    await bot.idle()  # Pyrogram v2+ compatible
 
 if __name__ == "__main__":
     try:
