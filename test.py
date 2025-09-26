@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 # Environment variables (as provided)
 API_ID = int(os.environ.get("API_ID", "27074109"))
-API_HASH = os.environ.get("API_HASH", "301e069d266e091df4bd58353679f3b1"))
+API_HASH = os.environ.get("API_HASH", "301e069d266e091df4bd58353679f3b1")
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8292399578:AAH2jrVBWHnCTLCsEr7pcCZF89XqxPCkKRY")
 AUTH_CHANNEL = int(os.environ.get("CHANNEL_ID", "-1003087895191"))
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "7006516881"))
