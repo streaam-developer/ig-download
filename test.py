@@ -41,21 +41,21 @@ async def start_handler(client, message):
 async def check_handler(client, message):
     user_id = message.from_user.id
     try:
-        # 1) पहले check करें approved member है या नहीं
+        # approved member check
         member = await client.get_chat_member(CHANNEL_ID, user_id)
         if is_member_status(getattr(member, "status", None)):
             await message.reply_text("✅ तुम्हारी request approve हो चुकी है, तुम channel member हो।")
             return
     except UserNotParticipant:
-        pass  # अगर member नहीं है तो नीचे pending check करेंगे
+        pass
     except RPCError as e:
         await message.reply_text("⚠️ Error: bot शायद channel का admin नहीं है।")
         print("get_chat_member error:", e)
         return
 
-    # 2) अगर member नहीं है, तो pending list check करो
+    # pending check (fix async generator)
     try:
-        pending_requests = await client.get_chat_join_requests(CHANNEL_ID, limit=200)
+        pending_requests = [req async for req in client.get_chat_join_requests(CHANNEL_ID, limit=200)]
         if any(req.from_user.id == user_id for req in pending_requests):
             await message.reply_text("⌛ तुम्हारी request अभी PENDING है, admin के approval का इंतज़ार है।")
         else:
@@ -63,6 +63,7 @@ async def check_handler(client, message):
     except RPCError as e:
         await message.reply_text("⚠️ Pending requests check करने में error आया।")
         print("get_chat_join_requests error:", e)
+
 
 
 if __name__ == "__main__":
