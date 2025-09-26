@@ -2,12 +2,12 @@ import os
 import asyncio
 import logging
 from pyrogram import Client, filters, idle
-from pyrogram.types import ChatJoinRequest
-from pyrogram.errors import ChatAdminRequired, FloodWait, BadRequest, Forbidden, UserNotParticipant
+from pyrogram.types import ChatJoinRequest, Message
+from pyrogram.errors import ChatAdminRequired, FloodWait, BadRequest, Forbidden, UserNotParticipant, PeerIdInvalid
 
-# Set up logging for full debugging
+# Set up logging for full debugging (more verbose)
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,  # Changed to DEBUG for more details
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('bot.log'),  # Logs to file
@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 
 # Environment variables (as provided)
 API_ID = int(os.environ.get("API_ID", "27074109"))
-API_HASH = os.environ.get("API_HASH", "301e069d266e091df4bd58353679f3b1")
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8292399578:AAH2jrVBWHnCTLCsEr7pcCZF89XqxPCkKRY")
+API_HASH = os.environ.get("API_HASH", "301e069d266e091df4bd58353679f3b1"))
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8292399578:AAH2jrVBWHnCTLCsEr7pcCZF89XqxPCkKRY"))
 AUTH_CHANNEL = int(os.environ.get("CHANNEL_ID", "-1003087895191"))
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "7006516881"))
 
@@ -34,37 +34,75 @@ bot = Client(
 )
 
 # In-memory storage for pending user IDs (only new requests while bot is running)
-# For persistence, consider using a file, database (e.g., SQLite), or Redis
 pending_user_ids = set()
 
 @bot.on_chat_join_request(filters.chat(AUTH_CHANNEL))
 async def handle_new_join_request(client, join_request: ChatJoinRequest):
     """
     Automatically captures new pending join requests and stores user IDs.
-    This runs in real-time when a new request arrives.
-    Note: This does NOT fetch existing pending requests before the bot started.
     """
     try:
         user_id = join_request.from_user.id
         pending_user_ids.add(user_id)
         logger.info(f"New pending request captured from user ID: {user_id} (Total pending: {len(pending_user_ids)})")
-        print(f"New pending request from user ID: {user_id}")  # Console log as before
-        # Optional: Auto-approve or decline here if needed
-        # await client.approve_chat_join_request(AUTH_CHANNEL, user_id, join_request.date)
-        # Or: await client.decline_chat_join_request(AUTH_CHANNEL, user_id, join_request.date)
+        print(f"New pending request from user ID: {user_id}")
     except Exception as e:
         logger.error(f"Error in handle_new_join_request: {str(e)}")
         print(f"Error handling new join request: {e}")
 
-@bot.on_message(filters.command("check") & filters.user(ADMIN_ID))
-async def check_pending_requests(client, message):
+# General handler to log ALL incoming messages (for debugging why commands aren't received)
+@bot.on_message()
+async def log_all_messages(client, message: Message):
     """
-    Handles /check command - only for ADMIN_ID.
-    Logs every step for debugging.
+    Logs EVERY incoming message to the bot. This will show if messages are reaching the bot at all.
     """
     try:
-        logger.info(f"/check command received from user {message.from_user.id} in chat {message.chat.id}")
-        print(f"/check triggered by user {message.from_user.id}")
+        logger.debug(f"ALL MESSAGE RECEIVED: From user {message.from_user.id if message.from_user else 'None'} (username: {message.from_user.username if message.from_user else 'None'}), "
+                     f"Chat ID: {message.chat.id}, Chat Type: {message.chat.type}, Text: '{message.text or 'Non-text message'}', "
+                     f"Is Command: {message.text.startswith('/') if message.text else False}")
+        print(f"[DEBUG] Message received in chat {message.chat.id} from {message.from_user.id if message.from_user else 'Unknown'}: {message.text or 'Media/Other'}")
+    except Exception as e:
+        logger.error(f"Error logging all messages: {str(e)}")
+
+# Basic /start handler - replies to ANYONE to test if bot can respond
+@bot.on_message(filters.command("start"))
+async def start_command(client, message: Message):
+    """
+    Simple /start to test bot responsiveness. Replies to anyone.
+    """
+    try:
+        logger.info(f"/start command received from user {message.from_user.id} in chat {message.chat.id}")
+        print(f"/start triggered by user {message.from_user.id}")
+        
+        await message.reply("Bot is working! Hello from @Boltarhegabot. Use /check for pending requests (admin only).")
+        logger.info("Replied to /start")
+        print("Replied to /start")
+    except Exception as e:
+        logger.error(f"Error in /start: {str(e)}")
+        print(f"Error in /start: {e}")
+
+# Log all commands (expanded to more commands for testing)
+@bot.on_message(filters.command(["help", "check", "ping"]))
+async def log_all_commands(client, message: Message):
+    """
+    Logs incoming commands like /help, /check, /ping for debugging.
+    """
+    try:
+        cmd = message.command[0] if message.command else "unknown"
+        logger.info(f"Incoming command '{cmd}' from user {message.from_user.id} (username: {message.from_user.username or 'None'}) "
+                    f"in chat {message.chat.id} (type: {message.chat.type})")
+        print(f"Command logged: /{cmd} from {message.from_user.id} in {message.chat.type}")
+    except Exception as e:
+        logger.error(f"Error logging command: {str(e)}")
+
+@bot.on_message(filters.command("check") & filters.user(ADMIN_ID))
+async def check_pending_requests(client, message: Message):
+    """
+    Handles /check command - only for ADMIN_ID.
+    """
+    try:
+        logger.info(f"/check command received from admin {message.from_user.id} in chat {message.chat.id}")
+        print(f"/check triggered by admin {message.from_user.id}")
         
         await message.reply("Checking pending join requests (new ones captured by bot)...")
         logger.info("Replied with 'Checking...' message")
@@ -72,68 +110,86 @@ async def check_pending_requests(client, message):
         if pending_user_ids:
             id_list = "\n".join(str(uid) for uid in sorted(pending_user_ids))
             response = f"Total Pending User IDs ({len(pending_user_ids)}):\n{id_list}"
+            # Check if response is too long
+            if len(response) > 4096:
+                response = f"Total Pending: {len(pending_user_ids)}. Too many to list here. Check bot.log or console."
             await message.reply(response)
-            logger.info(f"Sent response with {len(pending_user_ids)} pending IDs")
-            print(f"Response sent: {len(pending_user_ids)} IDs listed")
+            logger.info(f"Sent /check response with {len(pending_user_ids)} pending IDs")
+            print(f"/check response sent: {len(pending_user_ids)} IDs")
         else:
             no_pending_msg = "No pending join requests captured yet. (Bot only tracks new ones after startup.)"
             await message.reply(no_pending_msg)
             logger.info("Sent 'No pending' response")
-            print("No pending requests - response sent")
+            print("No pending requests - /check response sent")
             
     except BadRequest as e:
-        # Common: Message too long, or reply failed
         logger.warning(f"BadRequest in /check: {str(e)} (e.g., message too long or can't reply)")
-        print(f"BadRequest: {e}")
-        # Fallback: Send a short message
+        print(f"BadRequest in /check: {e}")
         try:
-            await message.reply("Pending requests found, but response too long. Check logs for details.")
+            await message.reply("Pending requests found, but response too long. Check logs.")
         except:
             pass
     except Forbidden as e:
-        logger.error(f"Forbidden in /check: {str(e)} (Bot can't send messages here)")
-        print(f"Forbidden: {e}")
+        logger.error(f"Forbidden in /check: {str(e)} (Bot can't send messages here - check privacy or add bot)")
+        print(f"Forbidden in /check: {e}")
     except Exception as e:
-        logger.error(f"Unexpected error in check_pending_requests: {str(e)}")
+        logger.error(f"Unexpected error in /check: {str(e)}")
         print(f"Full error in /check: {e}")
         try:
             await message.reply(f"Error: {str(e)}")
         except:
             pass
 
-# General message handler for debugging incoming messages (logs all commands)
-@bot.on_message(filters.command(["start", "help", "check"]))
-async def log_all_commands(client, message):
+# Optional: /ping for testing latency/response
+@bot.on_message(filters.command("ping") & filters.user(ADMIN_ID))
+async def ping_command(client, message: Message):
     """
-    Logs ALL incoming commands for debugging (even if not handled elsewhere).
-    This helps see if /check is being received at all.
+    Simple /ping for admin to test if commands work.
     """
     try:
-        logger.info(f"Incoming command '{message.command[0]}' from user {message.from_user.id} (username: {message.from_user.username or 'None'}) in chat {message.chat.id} (type: {message.chat.type})")
-        print(f"Command logged: {message.command[0]} from {message.from_user.id}")
+        start_time = message.date
+        await message.reply("Pong! Bot is responsive.")
+        logger.info(f"/ping from admin {message.from_user.id}")
+        print("/ping responded")
     except Exception as e:
-        logger.error(f"Error logging command: {str(e)}")
+        logger.error(f"Error in /ping: {str(e)}")
 
 async def main():
     try:
-        # Start the bot
         logger.info("Starting bot...")
         print("Starting bot...")
         await bot.start()
         me = await bot.get_me()
         logger.info(f"Bot started successfully! Bot username: @{me.username}, ID: {me.id}")
-        print(f"Bot started! Username: @{me.username}, Listening for new join requests in channel {AUTH_CHANNEL}.")
-        print("Use /check in a chat with the bot (only admin {ADMIN_ID} can use it).")
-        print("Note: This bot can only track NEW pending requests after it starts. For full list including existing ones, a user client is required.")
+        print(f"Bot started! Username: @{me.username}, ID: {me.id}")
+        print(f"Listening for new join requests in channel {AUTH_CHANNEL}.")
+        print("Test commands:")
+        print("- Send /start to bot in DMs to test basic reply.")
+        print("- Send /check or /ping from ADMIN_ID (7006516881) in DMs or group.")
+        print("Note: For commands in GROUPS, disable bot privacy: /mybots > @Boltarhegabot > Bot Settings > Group Privacy > Turn off.")
         
-        # Test if bot can access the channel
+        # Test channel access
         try:
             channel = await bot.get_chat(AUTH_CHANNEL)
-            logger.info(f"Bot can access channel: {channel.title} (ID: {channel.id})")
-            print(f"Channel accessible: {channel.title}")
+            logger.info(f"Bot can access channel: {channel.title} (ID: {channel.id}, Type: {channel.type})")
+            print(f"Channel accessible: {channel.title} (Type: {channel.type})")
+        except PeerIdInvalid:
+            logger.error(f"Invalid channel ID: {AUTH_CHANNEL}. Check if it's correct (should be negative for channels).")
+            print(f"ERROR: Invalid channel ID {AUTH_CHANNEL}")
         except Exception as e:
-            logger.warning(f"Bot cannot access channel {AUTH_CHANNEL}: {str(e)} (Ensure bot is admin)")
-            print(f"Warning: Cannot access channel - {e}")
+            logger.warning(f"Bot cannot access channel {AUTH_CHANNEL}: {str(e)} (Ensure bot is admin in channel)")
+            print(f"Warning: Cannot access channel - {e}. Add bot as admin.")
+        
+        # Test sending a message to self (DM) to verify reply capability
+        try:
+            test_msg = await bot.send_message("me", "Bot self-test: Running successfully!")
+            logger.info(f"Self-test message sent to 'me' (ID: {test_msg.id})")
+            print("Self-test: Bot can send messages.")
+            await asyncio.sleep(2)
+            await bot.delete_messages("me", test_msg.id)  # Clean up
+        except Exception as e:
+            logger.warning(f"Self-test failed: {str(e)} (Bot may have issues sending messages)")
+            print(f"Self-test warning: {e}")
         
     except Exception as e:
         logger.error(f"Failed to start bot: {str(e)}")
@@ -141,9 +197,9 @@ async def main():
         return
     
     try:
-        # Keep the bot running
         logger.info("Bot is now idle and running...")
         print("Bot is running. Press Ctrl+C to stop.")
+        print("Send /start to bot in DMs to test. Watch console/logs for [DEBUG] messages.")
         await idle()
     except KeyboardInterrupt:
         logger.info("Bot stopped by user (Ctrl+C)")
@@ -157,5 +213,4 @@ async def main():
         print("Bot fully stopped.")
 
 if __name__ == "__main__":
-    # Run the main function
     asyncio.run(main())
