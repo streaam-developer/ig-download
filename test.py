@@ -21,6 +21,9 @@ from pyrogram import Client, filters, enums
 from pyrogram.types import Message
 
 # --- Load env vars ---
+API_ID = int(os.environ.get("API_ID", "27074109"))
+API_HASH = os.environ.get("API_HASH", "301e069d266e091df4bd58353679f3b1")
+
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8292399578:AAH2jrVBWHnCTLCsEr7pcCZF89XqxPCkKRY" )
 CHANNEL_ID = int(os.getenv("CHANNEL_ID", "-1003087895191"))
 ADMIN_ID = int(os.getenv("ADMIN_ID", "7006516881"))
@@ -40,8 +43,13 @@ logger.addHandler(handler)
 logger.addHandler(logging.StreamHandler())
 
 # --- Bot client ---
-bot = Client(APP_NAME, bot_token=BOT_TOKEN, parse_mode="html")
-
+bot = Client(
+    "joinreq_direct",
+    api_id=API_ID,
+    api_hash=API_HASH,
+    bot_token=BOT_TOKEN,
+    parse_mode="html"
+)
 
 async def send_error(e: Exception, context: str):
     """Send error details to ADMIN_ID and log to file."""
