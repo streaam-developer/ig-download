@@ -13,62 +13,56 @@ app = Client("joinreq_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKE
 
 
 def is_member_status(status: str) -> bool:
-    """Return True if status indicates the user is joined/approved."""
     if not status:
         return False
     status = status.lower()
     return status in ("member", "administrator", "creator")
 
 
-# /start -> create join-request link
+# /start -> join-request link
 @app.on_message(filters.command("start") & filters.private)
 async def start_handler(client, message):
     try:
         invite = await client.create_chat_invite_link(
             chat_id=CHANNEL_ID,
-            creates_join_request=True  # force join-request link
+            creates_join_request=True
         )
         await message.reply_text(
-            f"✅ यहाँ तुम्हारा join-request link है:\n\n{invite.invite_link}\n\n"
-            "इससे join करने के बाद admin approve करेंगे।"
+            f"👉 यहाँ तुम्हारा join-request link है:\n\n{invite.invite_link}\n\n"
+            "Request भेजो, फिर /check से status देख सकते हो।"
         )
     except RPCError as e:
-        await message.reply_text(
-            "❌ Join-request link नहीं बना सका।\n\n"
-            "Bot को channel का admin बनाओ और 'Invite Users via Link' permission दो।"
-        )
+        await message.reply_text("❌ Join-request link बनाने में error आया।\nBot को channel का admin बनाओ।")
         print("create_chat_invite_link error:", e)
 
 
-# /check -> check if approved member
+# /check -> member / pending / not sent
 @app.on_message(filters.command("check") & filters.private)
 async def check_handler(client, message):
     user_id = message.from_user.id
     try:
+        # 1) पहले check करें approved member है या नहीं
         member = await client.get_chat_member(CHANNEL_ID, user_id)
         if is_member_status(getattr(member, "status", None)):
-            await message.reply_text("✅ तुम्हारी request approve हो गई है, तुम channel member हो।")
-        else:
-            await message.reply_text("❌ Request अभी approve नहीं हुई।")
+            await message.reply_text("✅ तुम्हारी request approve हो चुकी है, तुम channel member हो।")
+            return
     except UserNotParticipant:
-        await message.reply_text("❌ तुम्हारी request अभी तक approve नहीं हुई (pending है या send ही नहीं की)।")
+        pass  # अगर member नहीं है तो नीचे pending check करेंगे
     except RPCError as e:
-        await message.reply_text("⚠️ Error आया, bot शायद channel में admin नहीं है।")
+        await message.reply_text("⚠️ Error: bot शायद channel का admin नहीं है।")
         print("get_chat_member error:", e)
+        return
 
-
-# सिर्फ admin नया link बना सके
-@app.on_message(filters.command("newlink") & filters.user(ADMIN_ID))
-async def newlink_handler(client, message):
+    # 2) अगर member नहीं है, तो pending list check करो
     try:
-        invite = await client.create_chat_invite_link(
-            chat_id=CHANNEL_ID,
-            creates_join_request=True
-        )
-        await message.reply_text(f"🔐 नया join-request link:\n\n{invite.invite_link}")
+        pending_requests = await client.get_chat_join_requests(CHANNEL_ID, limit=200)
+        if any(req.from_user.id == user_id for req in pending_requests):
+            await message.reply_text("⌛ तुम्हारी request अभी PENDING है, admin के approval का इंतज़ार है।")
+        else:
+            await message.reply_text("❌ तुम्हारी request pending में नहीं है (शायद भेजी ही नहीं या reject हो गई)।")
     except RPCError as e:
-        await message.reply_text("❌ नया link नहीं बना सका।")
-        print("newlink error:", e)
+        await message.reply_text("⚠️ Pending requests check करने में error आया।")
+        print("get_chat_join_requests error:", e)
 
 
 if __name__ == "__main__":
