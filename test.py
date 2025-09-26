@@ -10,7 +10,8 @@ Run:
     export ADMIN_ID="123456789"          # your Telegram user id (for error logs)
     python join_request_bot.py
 """
-
+from pyrogram import idle
+from pyrogram import Client, filters
 import os
 import asyncio
 import logging
